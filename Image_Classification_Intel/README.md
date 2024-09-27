@@ -48,57 +48,67 @@ Number of images in Train Directory:
 
 ### 4 - Data Preprocessing
 
-For preparing datasets to the model I used ImageDataGenerator for rescaling which is __1/255.0__. Also I defined batch size __128__, and for creating artifical images I used rotating that takes maximum __60__ degree rotation. In the below code every parameters are visible with explanation. 
+For preparing datasets to the model I used ImageDataGenerator for rescaling which is __1/255.0__. Also I defined batch size __64__, and for creating artifical images I used rotating that takes maximum __40__ degree rotation. In the below code every parameters are visible with explanation. 
 ```
-train_datagen = ImageDataGenerator(
-        rescale=1/255.0,            #multiply the data by the value provided
-        featurewise_center=True,    #create generator that centers pixel values
-        rotation_range=60,          #maximum 60 degree random rotation
-        width_shift_range=0.2,      #fraction of total width, if < 1, or pixels if >= 1.
-        height_shift_range=0.2,     #fraction of total height, if < 1, or pixels if >= 1.
-        shear_range=0.2,            #image disortion in axis
-        fill_mode='nearest')        #fill the color with nearest neighborhood for example, aaaaaaaa|abcd|dddddddd
+train_datagen = ImageDataGenerator(horizontal_flip=True,
+                                  vertical_flip=True,
+                                  rescale=1.0/255,
+                                  rotation_range=40,
+                                  width_shift_range=0.2,
+                                  height_shift_range=0.2,
+                                  fill_mode='nearest',
+                                  zoom_range=0.2
+                                 )
 
 ```
 
 ```
-train_generator = train_datagen.flow_from_directory(
-        train_path,
-        shuffle=True,              #shuffling the order of the image that is being yielded
-        target_size=(150,150),     #size of image
-        batch_size=128,            #size of the batches of data 
-        class_mode='categorical'   #predicting more than two classes so we will use categorical
-    )
+train_generator = train_datagen.flow_from_directory(directory=train_path,
+                                                    target_size=(IMAGE_SIZE , IMAGE_SIZE),
+                                                    batch_size=BATCH_SIZE,
+                                                    class_mode='categorical')   
 ```
 
 ### 5 - Modelling 
+I created my own model. 
 
-I used pretrained InceptionResNetV2 model. The InceptionResNetV2 model is already trained more than 1 million images. Then I added these parameters over the pre-trained model.
+```
+model = keras.models.Sequential([
+        keras.layers.Conv2D(32,kernel_size=(3,3),activation='relu',input_shape=(IMAGE_SIZE,IMAGE_SIZE,3)),
+        keras.layers.MaxPool2D(2,2),
+        keras.layers.Conv2D(64,kernel_size=(3,3),activation='relu'),
+        keras.layers.MaxPool2D(2,2),
+        keras.layers.Conv2D(128,kernel_size=(3,3),activation='relu'),
+        keras.layers.MaxPool2D(2,2),
+        keras.layers.Conv2D(256,kernel_size=(3,3),activation='relu'),
+        keras.layers.MaxPool2D(2,2),
+        keras.layers.Conv2D(512,kernel_size=(3,3),activation='relu'),
+        keras.layers.MaxPool2D(2,2),
+        keras.layers.Flatten() ,    
+        keras.layers.Dense(128,activation='relu') ,            
+        keras.layers.Dropout(rate=0.5) ,            
+        keras.layers.Dense(6,activation='softmax') ,    
+        ])
+```
+Finally I am compiling model according these parameters, I used RMSprop class and I gave learning rate 0.001. 
+```
+model.compile(optimizer ='adam',loss='categorical_crossentropy',metrics=['accuracy'])
+```
 
+I used pretrained ResNet50 model. The ResNet50 model is already trained more than 1 million images. Then I added these parameters over the pre-trained model.
 ```
-x = tf.keras.layers.Dropout(0.2)(last_output)
-x = tf.keras.layers.Dense(units=128, activation='relu')(x)
-x = tf.keras.layers.Dropout(0.2)(x)
-x = tf.keras.layers.Dense(units=128, activation='relu')(x)
-x = tf.keras.layers.Dropout(0.2)(x)
-x = tf.keras.layers.Dense(units=6, activation='softmax')(x)
+base_model = ResNet50(include_top=False , weights='imagenet', input_shape=(IMAGE_SIZE ,IMAGE_SIZE ,3))
+base_model.trainable = False
+
+model_2 = Sequential()
+model_2.add(base_model)
+model_2.add(layers.Flatten())
+model_2.add(layers.Dense(units=128 , activation='relu' ))
+model_2.add(layers.Dense(units=6 , activation='softmax'))
+
+model_2.summary()
 ```
-Finally I am compiling model according these parameters, I used RMSprop class and I gave learning rate 0.0002 and momentum 0.9( A scalar or a scalar Tensor). 
+I then compiled the model and used these parameters
 ```
-model.compile(
-        optimizer = tf.keras.optimizers.RMSprop(learning_rate=0.0002, momentum=0.9, centered=True), 
-        loss = ['categorical_crossentropy'], 
-        metrics = ['accuracy']
-    )
-```
-Additionally, because of higher epochs time I decided to implement Early Stopping class, which is stopping training when it doesnt improve anymore or extremly low.
-```
-    tf.keras.callbacks.EarlyStopping(
-        monitor='val_loss',          #which quantity will monitor
-        min_delta=0.001,             #minimum change in the monitored quantity to qualify as an improvement
-        patience=5,                  #number of epochs with no improvement after which training will be stopped
-        verbose=1,                   #verbosity mode
-        mode='auto',                 #the direction is automatically inferred from the name of the monitored quantity.
-        baseline=None,               #baseline value for the monitored quantity
-        restore_best_weights=True)]  #whether to restore model weights from the epoch with the best value of the monitored quantity
+model_2.compile(optimizer=optimizers.RMSprop(learning_rate=0.001) , loss='categorical_crossentropy' , metrics=['accuracy'])
 ```
